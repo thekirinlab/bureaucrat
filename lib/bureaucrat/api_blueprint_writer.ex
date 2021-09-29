@@ -34,37 +34,25 @@ defmodule Bureaucrat.ApiBlueprintWriter do
     end
   end
 
-  defp write_api_doc(records, file) do
-    Enum.each(records, fn {controller, actions} ->
-      %{request_path: path} = Enum.at(actions, 0) |> elem(1) |> List.first()
-      {group_title, controller_title} = get_group_and_controller_title(controller)
-      puts(file, "\n# Group #{group_title}")
-      puts(file, "## #{controller_title} [#{path}]")
+  defp write_api_doc(group_records, file) do
+    Enum.each(group_records, fn {group, records} ->
+      puts(file, "\n# Group #{group}")
 
-      Enum.each(actions, fn {action, records} ->
-        write_action(action, controller, Enum.reverse(records), file)
+      Enum.each(records, fn {controller, actions} ->
+        %{request_path: path} = Enum.at(actions, 0) |> elem(1) |> List.first()
+        puts(file, "## #{controller} [#{path}]")
+
+        Enum.each(actions, fn {action, records} ->
+          write_action(action, controller, Enum.reverse(records), file)
+        end)
       end)
     end)
 
     puts(file, "")
   end
 
-  defp get_group_and_controller_title(nil), do: {nil, nil}
-
-  defp get_group_and_controller_title(controller) do
-    [controller_title | namespaces] = String.split(controller, ".") |> Enum.reverse()
-
-    group_title =
-      namespaces
-      |> Enum.reverse()
-      |> Enum.join(" ")
-
-    controller_title = String.replace_suffix(controller_title, "Controller", "")
-    {group_title, controller_title}
-  end
-
-  defp write_action(action, controller, records, file) do
-    test_description = "#{controller} #{action}"
+  defp write_action(action, _controller, records, file) do
+    test_description = action
     record_request = Enum.at(records, 0)
     method = record_request.method
 
@@ -217,10 +205,17 @@ defmodule Bureaucrat.ApiBlueprintWriter do
   end
 
   defp group_records(records) do
-    by_controller = Bureaucrat.Util.stable_group_by(records, &get_controller/1)
+    by_group = Enum.group_by(records, &get_group/1)
 
-    Enum.map(by_controller, fn {c, recs} ->
-      {c, Bureaucrat.Util.stable_group_by(recs, &get_action/1)}
+    Enum.map(by_group, fn {g, g_recs} ->
+      by_controller = Enum.group_by(g_recs, &get_controller_without_group/1)
+
+      c_recs_group =
+        Enum.map(by_controller, fn {c, c_recs} ->
+          {c, Enum.group_by(c_recs, &get_action/1)}
+        end)
+
+      {g, c_recs_group}
     end)
   end
 
@@ -231,8 +226,34 @@ defmodule Bureaucrat.ApiBlueprintWriter do
     end
   end
 
-  defp get_controller({_, opts}), do: opts[:group_title] || String.replace_suffix(strip_ns(opts[:module]), "Test", "")
-  defp get_controller(conn), do: conn.assigns.bureaucrat_opts[:group_title] || strip_ns(conn.private.phoenix_controller)
+  defp get_group(args), do: parse_group_title(get_controller(args))
+
+  defp parse_group_title(nil), do: {nil, nil}
+
+  defp parse_group_title(controller) do
+    [_ | namespaces] = String.split(controller, ".") |> Enum.reverse()
+
+    namespaces
+    |> Enum.reverse()
+    |> Enum.drop(1)
+    |> Enum.join(" ")
+  end
+
+  defp parse_controller_title(nil), do: {nil, nil}
+
+  defp parse_controller_title(controller) do
+    controller_title = String.split(controller, ".") |> List.last()
+
+    String.replace_suffix(controller_title, "Controller", "")
+  end
+
+  defp get_controller_without_group(args), do: parse_controller_title(get_controller(args))
+
+  defp get_controller({_, opts}),
+    do: opts[:group_title] || String.replace_suffix(strip_ns(opts[:module]), "Test", "")
+
+  defp get_controller(conn),
+    do: conn.assigns.bureaucrat_opts[:group_title] || strip_ns(conn.private.phoenix_controller)
 
   defp get_action({_, opts}), do: opts[:description]
   defp get_action(conn), do: conn.private.phoenix_action
