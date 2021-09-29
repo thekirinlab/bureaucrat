@@ -36,6 +36,13 @@ defmodule Bureaucrat.ApiBlueprintWriter do
 
   defp write_api_doc(group_records, file) do
     Enum.each(group_records, fn {group, records} ->
+      group =
+        if group == "" do
+          "API"
+        else
+          group
+        end
+
       puts(file, "\n# Group #{group}")
 
       Enum.each(records, fn {controller, actions} ->
