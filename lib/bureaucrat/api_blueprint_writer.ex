@@ -79,7 +79,7 @@ defmodule Bureaucrat.ApiBlueprintWriter do
     method = record.method
 
     file
-    |> puts("### #{test_description} [#{method} #{anchor(record)}]")
+    |> puts("### #{test_description} - #{record.assigns.bureaucrat_desc} [#{method} #{anchor(record)}]")
     |> puts("\n\n #{Keyword.get(record.assigns.bureaucrat_opts, :detail, "")}")
 
     write_parameters(record.path_params, file)
@@ -342,8 +342,8 @@ defmodule Bureaucrat.ApiBlueprintWriter do
 
   defp get_path({%Phoenix.Socket.Broadcast{event: event}, _}), do: event
   defp get_path({%Phoenix.Socket.Message{event: event}, _}), do: event
-  defp get_path({%Phoenix.Socket.Reply{payload: payload, topic: topic}, _}), do: topic
-  defp get_path({{status, payload, %Phoenix.Socket{} = socket}, _}), do: status
+  defp get_path({%Phoenix.Socket.Reply{topic: topic}, _}), do: topic
+  defp get_path({{status, _payload, %Phoenix.Socket{} = _socket}, _}), do: status
   defp get_path(conn), do: conn.request_path
 
   def format_body_params(params) do
