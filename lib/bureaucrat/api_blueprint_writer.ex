@@ -37,8 +37,9 @@ defmodule Bureaucrat.ApiBlueprintWriter do
   defp write_api_doc(records, file) do
     Enum.each(records, fn {controller, actions} ->
       %{request_path: path} = Enum.at(actions, 0) |> elem(1) |> List.first()
-      puts(file, "\n# Group #{controller}")
-      puts(file, "## #{controller} [#{path}]")
+      {group_title, controller_title} = get_group_and_controller_title(controller)
+      puts(file, "\n# Group #{group_title}")
+      puts(file, "## #{controller_title} [#{path}]")
 
       Enum.each(actions, fn {action, records} ->
         write_action(action, controller, Enum.reverse(records), file)
@@ -46,6 +47,20 @@ defmodule Bureaucrat.ApiBlueprintWriter do
     end)
 
     puts(file, "")
+  end
+
+  defp get_group_and_controller_title(nil), do: {nil, nil}
+
+  defp get_group_and_controller_title(controller) do
+    [controller_title | namespaces] = String.split(controller, ".") |> Enum.reverse()
+
+    group_title =
+      namespaces
+      |> Enum.reverse()
+      |> Enum.join(" ")
+
+    controller_title = String.replace_suffix(controller_title, "Controller", "")
+    {group_title, controller_title}
   end
 
   defp write_action(action, controller, records, file) do
