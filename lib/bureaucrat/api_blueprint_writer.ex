@@ -39,11 +39,22 @@ defmodule Bureaucrat.ApiBlueprintWriter do
       puts(file, "\n# Group #{group}")
 
       Enum.each(records, fn {controller, actions} ->
-        %{request_path: path} = Enum.at(actions, 0) |> elem(1) |> List.first()
-        puts(file, "## #{controller} [#{path}]")
+        path = get_path_from_actions(actions)
+
+        if path do
+          puts(file, "## #{controller} [#{path}]")
+        end
 
         Enum.each(actions, fn {action, records} ->
-          write_action(action, controller, Enum.reverse(records), file)
+          # do not sort channel by status code
+          if group == "Channel" do
+            records
+            |> Enum.each(&write_action(&1, action, file))
+          else
+            records
+            |> sort_by_status_code
+            |> Enum.each(&write_action(&1, action, file))
+          end
         end)
       end)
     end)
@@ -51,20 +62,83 @@ defmodule Bureaucrat.ApiBlueprintWriter do
     puts(file, "")
   end
 
-  defp write_action(action, _controller, records, file) do
+  defp get_path_from_actions(actions) do
+    action = Enum.at(actions, 0) |> elem(1) |> List.first()
+    get_path(action)
+  end
+
+  defp write_action(record, action, file) when is_map(record) do
     test_description = action
-    record_request = Enum.at(records, 0)
-    method = record_request.method
+    method = record.method
 
     file
-    |> puts("### #{test_description} [#{method} #{anchor(record_request)}]")
-    |> puts("\n\n #{Keyword.get(record_request.assigns.bureaucrat_opts, :detail, "")}")
+    |> puts("### #{test_description} [#{method} #{anchor(record)}]")
+    |> puts("\n\n #{Keyword.get(record.assigns.bureaucrat_opts, :detail, "")}")
 
-    write_parameters(record_request.path_params, file)
+    write_parameters(record.path_params, file)
 
-    records
-    |> sort_by_status_code
-    |> Enum.each(&write_example(&1, file))
+    write_example(record, file)
+  end
+
+  defp write_action(record, _action, file), do: write_example(record, file)
+
+  defp write_example({%Phoenix.Socket.Broadcast{topic: topic, payload: payload, event: event}, _}, file) do
+    file
+    |> puts("#### Broadcast")
+    |> puts("* __Topic:__ #{topic}")
+    |> puts("* __Event:__ #{event}")
+
+    if payload != %{} do
+      file
+      |> puts("* __Body:__")
+      |> puts("```json")
+      |> puts("#{format_body_params(payload)}")
+      |> puts("```")
+    end
+  end
+
+  defp write_example({%Phoenix.Socket.Message{topic: topic, payload: payload, event: event}, _}, file) do
+    file
+    |> puts("#### Message")
+    |> puts("* __Topic:__ #{topic}")
+    |> puts("* __Event:__ #{event}")
+
+    if payload != %{} do
+      file
+      |> puts("* __Body:__")
+      |> puts("```json")
+      |> puts("#{format_body_params(payload)}")
+      |> puts("```")
+    end
+  end
+
+  defp write_example({%Phoenix.Socket.Reply{payload: payload, status: status}, _}, file) do
+    file
+    |> puts("#### Reply")
+    |> puts("* __Status:__ #{status}")
+
+    if payload != %{} do
+      file
+      |> puts("* __Body:__")
+      |> puts("```json")
+      |> puts("#{format_body_params(payload)}")
+      |> puts("```")
+    end
+  end
+
+  defp write_example({{status, payload, %Phoenix.Socket{} = socket}, _}, file) do
+    file
+    |> puts("#### Join")
+    |> puts("* __Topic:__ #{socket.topic}")
+    |> puts("* __Receive:__ #{status}")
+
+    if payload != %{} do
+      file
+      |> puts("* __Body:__")
+      |> puts("```json")
+      |> puts("#{format_body_params(payload)}")
+      |> puts("```")
+    end
   end
 
   defp write_parameters(path_params, _file) when map_size(path_params) == 0, do: nil
@@ -226,7 +300,8 @@ defmodule Bureaucrat.ApiBlueprintWriter do
     end
   end
 
-  defp get_group(args), do: parse_group_title(get_controller(args))
+  defp get_group({_, _opts}), do: "Channel"
+  defp get_group(conn), do: parse_group_title(get_controller(conn))
 
   defp parse_group_title(nil), do: {nil, nil}
 
@@ -257,4 +332,15 @@ defmodule Bureaucrat.ApiBlueprintWriter do
 
   defp get_action({_, opts}), do: opts[:description]
   defp get_action(conn), do: conn.private.phoenix_action
+
+  defp get_path({%Phoenix.Socket.Broadcast{event: event}, _}), do: event
+  defp get_path({%Phoenix.Socket.Message{event: event}, _}), do: event
+  defp get_path({%Phoenix.Socket.Reply{payload: payload, topic: topic}, _}), do: topic
+  defp get_path({{status, payload, %Phoenix.Socket{} = socket}, _}), do: status
+  defp get_path(conn), do: conn.request_path
+
+  def format_body_params(params) do
+    {:ok, json} = JSON.encode(params, pretty: true)
+    json
+  end
 end

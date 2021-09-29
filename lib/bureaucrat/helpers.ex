@@ -134,6 +134,10 @@ defmodule Bureaucrat.Helpers do
     "#{topic}.#{event}"
   end
 
+  def get_default_operation_id(%Phoenix.Socket.Reply{payload: payload, status: topic}) do
+    "#{topic}.reply"
+  end
+
   @doc """
   Helper function for adding the phoenix_controller and phoenix_action keys to
   the private map of the request that's coming from the test modules.
