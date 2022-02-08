@@ -193,7 +193,10 @@ defmodule Bureaucrat.ApiBlueprintWriter do
     file |> puts(indent_lines(4, "+ Headers\n"))
 
     Enum.each(headers, fn {header, value} ->
-      puts(file, indent_lines(12, "#{header}: #{value}"))
+      # do not write x-request-id to keep api doc from changing frequently
+      if header != "x-request-id" do
+        puts(file, indent_lines(12, "#{header}: #{value}"))
+      end
     end)
 
     file
