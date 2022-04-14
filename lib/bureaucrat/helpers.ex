@@ -1,5 +1,6 @@
 defmodule Bureaucrat.Helpers do
-  alias Phoenix.Socket.{Broadcast, Message}
+  alias Phoenix.Socket.{Broadcast, Message, Reply}
+  alias Phoenix.Socket
 
   @doc """
   Adds a conn to the generated documentation.
@@ -9,6 +10,29 @@ defmodule Bureaucrat.Helpers do
   defmacro doc(conn) do
     quote bind_quoted: [conn: conn] do
       doc(conn, [])
+    end
+  end
+
+  @doc """
+  Adds a Phoenix.Socket connection to the generated documentation.
+
+  The name of the test currently being executed will be used as a description for the example.
+  """
+  defmacro doc_connect(
+             handler,
+             params,
+             connect_info \\ quote(do: %{})
+           ) do
+    if endpoint = Module.get_attribute(__CALLER__.module, :endpoint) do
+      quote do
+        {status, socket} =
+          unquote(Phoenix.ChannelTest).__connect__(unquote(endpoint), unquote(handler), unquote(params), unquote(connect_info))
+
+        doc({status, socket, unquote(handler), unquote(params), unquote(connect_info)})
+        {status, socket}
+      end
+    else
+      raise "module attribute @endpoint not set for socket/2"
     end
   end
 
@@ -134,8 +158,16 @@ defmodule Bureaucrat.Helpers do
     "#{topic}.#{event}"
   end
 
-  def get_default_operation_id(%Phoenix.Socket.Reply{payload: payload, status: topic}) do
+  def get_default_operation_id(%Reply{topic: topic}) do
     "#{topic}.reply"
+  end
+
+  def get_default_operation_id({_, _, %Socket{endpoint: endpoint}}) do
+    "#{endpoint}.reply"
+  end
+
+  def get_default_operation_id({_, %Socket{endpoint: endpoint}, _, _, _}) do
+    "#{endpoint}.connect"
   end
 
   @doc """
